@@ -36,19 +36,21 @@ class PaperScraper(object):
 
     @staticmethod
     def write(path, paper):
-        out_file = paper.link.split('/')[-1]
         out_path = '/'.join([path, paper.year])
 
         if not os.path.exists(out_path):
             os.mkdir(out_path)
 
-        resp = PaperScraper.visit(paper.link)
-        if resp.getcode() == HTTP_SUCCESS:
-            with open('/'.join([out_path, out_file]), 'wb') as fd:
-                fd.write(resp.read())
-        else:
-            print("Failed to download paper: {} [status={}]".format(
-                paper.link, resp.getcode()))
+        for link in paper.links:
+            out_file = '/'.join([out_path, link.split('/')[-1]])
+
+            print('Downloading paper from link ({})'.format(link))
+            resp = PaperScraper.visit(link)
+            if resp.getcode() == HTTP_SUCCESS:
+                with open(out_file, 'wb') as fd:
+                    fd.write(resp.read())
+            else:
+                print('Failed to download paper: {} [status={}]'.format(link, resp.getcode()))
 
 
 class ParsedResponse(object):
@@ -61,7 +63,7 @@ class Paper(object):
 
     def __init__(self):
         self.title = ''
-        self.link = ''
+        self.links = []
         self.year = ''
         self.authors = []
 
@@ -77,7 +79,9 @@ class Paper(object):
         else:
             raise ValueError("Invalid Tag Format: {}".format(text))
 
-        new_paper.link = urlparse.urljoin(base=url, url=tag.a.get('href'))
+        for link in tag.find_all('a'):
+            if Paper.is_paper_link(link.get('href')):
+                new_paper.links.append(urlparse.urljoin(base=url, url=link.get('href')))
 
         return new_paper
 
@@ -85,11 +89,9 @@ class Paper(object):
     def is_paper(tag):
         accepted = False
 
-        children = tag.children
-        for c in children:
-            if c.name == 'a':
-                if Paper.is_paper_link(c.get('href')):
-                    accepted = True
+        for candidate in tag.find_all('a'):
+            if Paper.is_paper_link(candidate.get('href')):
+                accepted = True
 
         return accepted
 
@@ -97,13 +99,14 @@ class Paper(object):
     def is_paper_link(link):
         accepted = False
 
-        if any(t in link.lower() for t in Paper.FILE_TYPES):
-            accepted = True
+        if link:
+            if any(t in link.lower() for t in Paper.FILE_TYPES):
+                accepted = True
 
         return accepted
 
     def __str__(self):
-        return '({}) [{}]'.format(self.year, self.link)
+        return '({}) [{}]'.format(self.year, self.links)
 
 
 if __name__ == '__main__':
